@@ -78,6 +78,10 @@ static size_t read_cb(void *userp, hyper_context *ctx,
     }
     return HYPER_IO_PENDING;
   }
+  else if(result) {
+    failf(data, "Curl_read failed");
+    return HYPER_IO_ERROR;
+  }
   return (size_t)nread;
 }
 
@@ -101,8 +105,10 @@ static size_t write_cb(void *userp, hyper_context *ctx,
     }
     return HYPER_IO_PENDING;
   }
-  else if(result)
+  else if(result) {
+    failf(data, "Curl_write failed");
     return HYPER_IO_ERROR;
+  }
   return (size_t)nwrote;
 }
 
@@ -398,6 +404,7 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
   hyper_clientconn *client = NULL;
   hyper_request *req = NULL;
   hyper_headers *headers = NULL;
+  hyper_task *handshake = NULL;
   CURLcode result;
   const char *p_accept; /* Accept: string */
   const char *method;
@@ -454,21 +461,20 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
 
   hyper_clientconn_options_exec(options, h->exec);
 
-  if(!h->handshake) {
-    /* "Both the `io` and the `options` are consumed in this function call" */
-    h->handshake = hyper_clientconn_handshake(io, options);
-    if(!h->handshake) {
-      failf(data, "Couldn't create hyper client handshake");
-      goto error;
-    }
-    io = NULL;
-    options = NULL;
+  /* "Both the `io` and the `options` are consumed in this function call" */
+  handshake = hyper_clientconn_handshake(io, options);
+  if(!handshake) {
+    failf(data, "Couldn't create hyper client handshake");
+    goto error;
   }
+  io = NULL;
+  options = NULL;
 
-  if(HYPERE_OK != hyper_executor_push(h->exec, h->handshake)) {
+  if(HYPERE_OK != hyper_executor_push(h->exec, handshake)) {
     failf(data, "Couldn't hyper_executor_push the handshake");
     goto error;
   }
+  handshake = NULL; /* ownership passed on */
 
   htask = hyper_executor_poll(h->exec);
   if(!htask) {
@@ -552,8 +558,8 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
   if(options)
     hyper_clientconn_options_free(options);
 
-  if(h->handshake)
-    hyper_task_free(h->handshake);
+  if(handshake)
+    hyper_task_free(handshake);
 
   return CURLE_OUT_OF_MEMORY;
 }

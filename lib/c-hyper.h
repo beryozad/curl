@@ -32,7 +32,6 @@ struct hyptransfer {
   hyper_waker *write_waker;
   hyper_waker *read_waker;
   const hyper_executor *exec;
-  hyper_task *handshake;
   bool init;
 };
 
