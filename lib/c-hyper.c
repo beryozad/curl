@@ -308,9 +308,11 @@ static CURLcode hyperstream(struct Curl_easy *data,
 
 static CURLcode debug_request(struct Curl_easy *data,
                               const char *method,
-                              const char *path)
+                              const char *path,
+                              bool h2)
 {
-  char *req = aprintf("%s %s HTTP/1.1\r\n", method, path);
+  char *req = aprintf("%s %s HTTP/%s\r\n", method, path,
+                      h2?"2":"1.1");
   if(!req)
     return CURLE_OUT_OF_MEMORY;
   Curl_debug(data, CURLINFO_HEADER_OUT, req, strlen(req));
@@ -400,6 +402,7 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
   const char *p_accept; /* Accept: string */
   const char *method;
   Curl_HttpReq httpreq;
+  bool h2 = FALSE;
 
   /* Always consider the DO phase done after this function call, even if there
      may be parts of the request that is not yet sent, since we can deal with
@@ -444,6 +447,11 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
     failf(data, "Couldn't create hyper client options");
     goto error;
   }
+  if(conn->negnpn == CURL_HTTP_VERSION_2) {
+    hyper_clientconn_options_http2(options, 1);
+    h2 = TRUE;
+  }
+
   hyper_clientconn_options_exec(options, h->exec);
 
   if(!h->handshake) {
@@ -487,7 +495,7 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
     goto error;
   }
 
-  if(debug_request(data, method, data->state.up.path)) {
+  if(debug_request(data, method, data->state.up.path, h2)) {
     failf(data, "debug callback\n");
     goto error;
   }
